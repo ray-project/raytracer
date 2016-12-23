@@ -23,14 +23,53 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
 
     <div class="card">
       <h1>View One</h1>
-      <p>Ut labores minimum atomorum pro. Laudem tibique ut has.</p>
-      <p>Lorem ipsum dolor sit amet, per in nusquam nominavi periculis, sit elit oportere ea.Lorem ipsum dolor sit amet, per in nusquam nominavi periculis, sit elit oportere ea.Cu mei vide viris gloriatur, at populo eripuit sit.</p>
+      <figure id="chart-container"></figure>
     </div>
   </template>
 
   <script>
     Polymer({
       is: 'my-view1',
+      ready: function() {
+        var chartContainer = Polymer.dom(this.root).querySelector('figure#chart-container');
+        var lineChart = document.createElement('google-chart');
+        var loader = document.createElement('google-chart-loader');
+        lineChart.setAttribute('type', 'line');
+        chartContainer.appendChild(lineChart);
+
+        loader.dataTable().then(function(dataTable) {
+          var jsonSocket = new WebSocket("ws://127.0.0.1:7379/");
+          jsonSocket.onopen = function() {
+            console.log("JSON socket connected!");
+            jsonSocket.send(JSON.stringify(["HGET", "experiment", "training"]));
+          };
+          jsonSocket.onmessage = function(messageEvent) {
+            var result = JSON.parse(JSON.parse(messageEvent.data)["HGET"]);
+
+            // Convert JSON dict to list.
+            var d = Object.keys(result).map(function(k) { return result[k] });
+
+            // The first column is the labels of the x-axis.
+            dataTable.addColumn("number", "axis");
+            // The remaining columns contain the data.
+            for (c = 0; c < d.length; ++c) {
+              dataTable.addColumn("number", Object.keys(result)[c].toString());
+            }
+
+            // Transpose the array and append index for each row.
+            var newArray = d[0].map(function(col, i) {
+              return [i].concat(d.map(function(row) {
+                return row[i];
+              }));
+            });
+
+            // Build the DataTable.
+            dataTable.addRows(newArray);
+            // Display it in the line chart.
+            lineChart.view = dataTable;
+          };
+        });
+      }
     });
   </script>
 </dom-module>
