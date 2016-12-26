@@ -22,15 +22,106 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
     </style>
 
     <div class="card">
-      <h1>View Two</h1>
-      <p>Ea duis bonorum nec, falli paulo aliquid ei eum.</p>
-      <p>Id nam odio natum malorum, tibique copiosae expetenda mel ea.Detracto suavitate repudiandae no eum. Id adhuc minim soluta nam.Id nam odio natum malorum, tibique copiosae expetenda mel ea.</p>
+      <h1>Experiment Overview</h1>
+        <vaadin-grid id="overview" visible-rows=5>
+        <table>
+          <colgroup>
+            <col name="Experiment ID"/>
+            <col name="MoreInfo"/>
+          </colgroup>
+        </table>
+      </vaadin-grid>
+      <vaadin-grid id="details">
+        <table>
+          <colgroup>
+            <col name="Property"/>
+            <col name="Value"/>
+          </colgroup>
+        </table>
+      </vaadin-grid>
+      <figure id="chart-container"></figure>
     </div>
   </template>
 
   <script>
     Polymer({
       is: 'my-view2',
+      ready: function() {
+        var loader = document.createElement('google-chart-loader');
+
+        var chartContainer = Polymer.dom(this.root).querySelector('figure#chart-container');
+        var lineChart = document.createElement('google-chart');
+        lineChart.setAttribute('type', 'line');
+        chartContainer.appendChild(lineChart);
+
+        var overviewGrid = Polymer.dom(this.root).querySelector("#overview");
+        var detailsGrid = Polymer.dom(this.root).querySelector("#details");
+
+        loader.dataTable().then(function(dataTable) {
+          dataTable.addColumn("number", "epoch");
+          dataTable.addColumn("number", "cost");
+
+          // var socket = new WebSocket("ws://54.208.58.9:7379/.json");
+          var socket = new WebSocket("ws://127.0.0.1:7379/.json");
+          socket.onopen = function() {
+            console.log("socket connected!");
+            socket.send(JSON.stringify(["KEYS", "*:metadata"]));
+          }
+          var chartSocket = new WebSocket("ws://127.0.0.1:7379/.json");
+          chartSocket.onopen = function() {
+            console.log("chartSocket connected!");
+          }
+
+          overviewGrid.addEventListener('selected-items-changed', function() {
+            var index = this.selection.selected();
+            console.log("selected " + index);
+            if (index != undefined && this.items != undefined && this.items[index] != undefined) {
+              var id = this.items[index]["Experiment ID"];
+              console.log("id is " + id);
+              socket.send(JSON.stringify(["HGETALL", id]));
+              chartSocket.send(JSON.stringify(["lrange", id + ":EpRewMean", "0", "-1"]));
+              socket.onmessage = function(messageEvent) {
+                console.dir(messageEvent.data);
+                var result = JSON.parse(messageEvent.data)["HGETALL"];
+                var data = [];
+                for (var key in result) {
+                  data.push({"Property": key, "Value": result[key]});
+                }
+                detailsGrid.items = data;
+              }
+            }
+          }.bind(overviewGrid));
+
+          chartSocket.onmessage = function(messageEvent) {
+            console.log("got charSocket message");
+            console.dir(messageEvent.data);
+
+            var list = JSON.parse(messageEvent.data)["lrange"].map(Number);
+            console.dir(list);
+
+            // dataTable.rows = [["episode"].concat(list), ["cost"].concat(list)];
+            // clear old contents
+            dataTable.removeRows(0, dataTable.getNumberOfRows());
+            for (i = 0; i < list.length; ++i) {
+              dataTable.addRow([i, list[i]]);
+            }
+
+            lineChart.view = dataTable;
+            lineChart.redraw();
+          }
+
+          socket.onmessage = function(messageEvent) {
+            console.dir(messageEvent);
+            var result = JSON.parse(messageEvent.data)["KEYS"];
+            console.dir(result);
+            var data = [];
+            for (var key in result) {
+              data.push({"Experiment ID": result[key].split(":")[0], "MoreInfo": 0});
+            }
+            overviewGrid.items = data;
+          }
+        });
+      }
     });
   </script>
 </dom-module>
