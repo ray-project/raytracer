@@ -62,12 +62,12 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
           dataTable.addColumn("number", "cost");
 
           // var socket = new WebSocket("ws://54.208.58.9:7379/.json");
-          var socket = new WebSocket("ws://127.0.0.1:7379/.json");
+          var socket = new WebSocket("ws://54.208.58.9:7379/.json");
           socket.onopen = function() {
             console.log("socket connected!");
             socket.send(JSON.stringify(["KEYS", "*:metadata"]));
           }
-          var chartSocket = new WebSocket("ws://127.0.0.1:7379/.json");
+          var chartSocket = new WebSocket("ws://54.208.58.9:7379/.json");
           chartSocket.onopen = function() {
             console.log("chartSocket connected!");
           }

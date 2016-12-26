@@ -55,7 +55,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
       ready: function() {
         var loader = document.createElement('google-chart-loader');
 
-        var metadataSocket = new WebSocket("ws://54.208.58.9:7379/.json");
+        var metadataSocket = new WebSocket("ws://127.0.0.1:7379/.json");
         metadataSocket.onopen = function() {
           console.log("metadataSocket connected!");
           metadataSocket.send(JSON.stringify(["HGETALL", "ebdc7f6c-c9bc-11e6-898f-127e9e09f0ba:metadata"]));
@@ -83,7 +83,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
         loader.dataTable().then(function(dataTable) {
           var jsonSocket = null; 
           function start() {
-            jsonSocket = new WebSocket("ws://54.208.58.9:7379/.json");
+            jsonSocket = new WebSocket("ws://127.0.0.1:7379/.json");
             jsonSocket.onopen = function() {
               console.log("JSON socket connected!");
               jsonSocket.send(JSON.stringify(["GET", "ebdc7f6c-c9bc-11e6-898f-127e9e09f0ba:iter:50:sgd"]));
@@ -136,7 +136,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
           start();
         });
 
-        var summarySocket = new WebSocket("ws://54.208.58.9:7379/.json");
+        var summarySocket = new WebSocket("ws://127.0.0.1:7379/.json");
         summarySocket.onopen = function() {
           console.log("JSON socket connected!");
           summarySocket.send(JSON.stringify(["HGETALL", "ebdc7f6c-c9bc-11e6-898f-127e9e09f0ba:iter:91:summary"]));
