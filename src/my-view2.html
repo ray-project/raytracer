@@ -16,8 +16,22 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
     <style include="shared-styles">
       :host {
         display: block;
-
         padding: 10px;
+      }
+      google-chart {
+        height: 300px;
+        width: 35em;
+      }
+      .table * {
+        border: none;
+        border-collapse: collapse;
+        padding: 0;
+        margin: 0;
+      }
+      vaadin-grid {
+        -moz-user-select: text;
+        -webkit-user-select: text;
+        -ms-user-select: text;
       }
     </style>
 
@@ -27,10 +41,24 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
         <table>
           <colgroup>
             <col name="Experiment ID"/>
-            <col name="MoreInfo"/>
+            <col name="Reward" sortable="" sort-direction="desc"/>
+            <col name="Environment" sortable="" sort-direction="desc"/>
+            <col name="EpisodeLength" sortable="" sort-direction="desc"/>
+            <col name="Date" sortable="" sort-direction="desc"/>
           </colgroup>
         </table>
       </vaadin-grid>
+      <table class="table" width="100%">
+        <tr>
+          <td><figure width="50%" id="cost-chart-container"></figure></td>
+          <td><figure width="50%" id="episode-length-chart-container"></figure></td>
+        </tr>
+        <tr>
+          <td><figure width="50%" id="loss-pol-chart-container"></figure></td>
+          <td><figure width="50%" id="loss-vf-chart-container"></figure></td>
+        </tr>
+      </table>
+      <p style="clear: both;">
       <vaadin-grid id="details">
         <table>
           <colgroup>
@@ -39,88 +67,211 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
           </colgroup>
         </table>
       </vaadin-grid>
-      <figure id="chart-container"></figure>
     </div>
   </template>
 
   <script>
+  var redis_address = "ws://54.208.58.9:7379/.json";
+  // var redis_address = "ws://54.146.239.38:7379/.json";
+
+    function load_chart(messageEvent, table, chart) {
+      console.log("got chart message");
+      console.dir(messageEvent.data);
+      
+      var list = JSON.parse(messageEvent.data)["lrange"].map(Number);
+
+      table.removeRows(0, table.getNumberOfRows());
+      for (i = 0; i < list.length; ++i) {
+        table.addRow([i, list[i]]);
+      }
+
+      chart.view = table;
+      chart.redraw();
+    };
+
     Polymer({
       is: 'my-view2',
       ready: function() {
         var loader = document.createElement('google-chart-loader');
 
-        var chartContainer = Polymer.dom(this.root).querySelector('figure#chart-container');
-        var lineChart = document.createElement('google-chart');
-        lineChart.setAttribute('type', 'line');
-        chartContainer.appendChild(lineChart);
+        var costChartContainer = Polymer.dom(this.root).querySelector('figure#cost-chart-container');
+        var costChart = document.createElement('google-chart');
+        costChart.setAttribute('type', 'line'); 
+        costChart.options = { legend: { position: 'top', alignment: 'end' }, chartArea: {width: '100%', height: '80%'}, series: { 0: { color: 'red'} } };
+        costChartContainer.appendChild(costChart);
+
+        var episodeLengthChartContainer = Polymer.dom(this.root).querySelector('figure#episode-length-chart-container');
+        var episodeLengthChart = document.createElement('google-chart');
+        episodeLengthChart.setAttribute('type', 'line');
+        episodeLengthChart.options = { legend: { position: 'top', alignment: 'end' }, chartArea: {width: '100%', height: '80%'}, series: { 0: { color: 'blue'} } };
+        episodeLengthChartContainer.appendChild(episodeLengthChart);
+
+        var lossPolChartContainer = Polymer.dom(this.root).querySelector('figure#loss-pol-chart-container');
+        var lossPolChart = document.createElement('google-chart');
+        lossPolChart.setAttribute('type', 'line');
+        lossPolChart.options = { legend: { position: 'top', alignment: 'end' }, chartArea: {width: '100%', height: '80%'}, series: { 0: { color: 'orange'} } };
+        lossPolChartContainer.appendChild(lossPolChart);
+
+        var lossValChartContainer = Polymer.dom(this.root).querySelector('figure#loss-vf-chart-container');
+        var lossValChart = document.createElement('google-chart');
+        lossValChart.setAttribute('type', 'line');
+        lossValChart.options = { legend: { position: 'top', alignment: 'end' }, chartArea: {width: '100%', height: '80%'}, series: { 0: { color: 'green'} } };
+        lossValChartContainer.appendChild(lossValChart);
 
         var overviewGrid = Polymer.dom(this.root).querySelector("#overview");
         var detailsGrid = Polymer.dom(this.root).querySelector("#details");
 
-        loader.dataTable().then(function(dataTable) {
-          dataTable.addColumn("number", "epoch");
-          dataTable.addColumn("number", "cost");
+        loader.dataTable().then(function(lossValTable) {
+        loader.dataTable().then(function(lossPolTable) {
+        loader.dataTable().then(function(episodeLengthTable) {
+        loader.dataTable().then(function(costTable) {
 
-          // var socket = new WebSocket("ws://54.208.58.9:7379/.json");
-          var socket = new WebSocket("ws://54.208.58.9:7379/.json");
-          socket.onopen = function() {
-            console.log("socket connected!");
-            socket.send(JSON.stringify(["KEYS", "*:metadata"]));
-          }
-          var chartSocket = new WebSocket("ws://54.208.58.9:7379/.json");
-          chartSocket.onopen = function() {
-            console.log("chartSocket connected!");
-          }
+          episodeLengthTable.addColumn("number", "epoch");
+          episodeLengthTable.addColumn("number", "average rollout length");
 
-          overviewGrid.addEventListener('selected-items-changed', function() {
-            var index = this.selection.selected();
-            console.log("selected " + index);
-            if (index != undefined && this.items != undefined && this.items[index] != undefined) {
-              var id = this.items[index]["Experiment ID"];
-              console.log("id is " + id);
-              socket.send(JSON.stringify(["HGETALL", id]));
-              chartSocket.send(JSON.stringify(["lrange", id + ":EpRewMean", "0", "-1"]));
-              socket.onmessage = function(messageEvent) {
-                console.dir(messageEvent.data);
-                var result = JSON.parse(messageEvent.data)["HGETALL"];
-                var data = [];
-                for (var key in result) {
-                  data.push({"Property": key, "Value": result[key]});
+          costTable.addColumn("number", "epoch");
+          costTable.addColumn("number", "average rollout reward");
+
+          lossPolTable.addColumn("number", "epoch");
+          lossPolTable.addColumn("number", "surrogate policy loss");
+
+          lossValTable.addColumn("number", "epoch");
+          lossValTable.addColumn("number", "value function loss");
+
+          var detailsSocket = new WebSocket(redis_address);
+
+          var costSocket = new WebSocket(redis_address);
+
+          var episodeLengthSocket = new WebSocket(redis_address);
+
+          var lossPolSocket = new WebSocket(redis_address);
+
+          var lossValSocket = new WebSocket(redis_address);
+
+          var hyperparamsSocket = new WebSocket(redis_address);
+          
+          var hyperparamLabels = ["max_iters", "timesteps_per_batch",
+                                  "clip_param", "max_timesteps", "lam",
+                                  "entcoeff", "klcoeff", "adapt_kl", "max_kl",
+                                  "gamma", "optim_batchsize", "linesearch",
+                                  "max_episodes", "optim_epochs",
+                                  "optim_stepsize"];
+
+          detailsSocket.onopen = function() {
+            console.log("detailsSocket connected!");
+
+            var socket = new WebSocket(redis_address);
+
+            socket.onopen = function() {
+              console.log("socket connected!");
+              socket.send(JSON.stringify(["KEYS", "*:metadata:date"]));
+            }
+            
+            socket.onmessage = function(messageEvent) {
+              console.log("got main message");
+              console.dir(messageEvent);
+              var result = JSON.parse(messageEvent.data)["KEYS"];
+              console.dir(result);
+              var experimentIDs = [];
+              var command = ["mget"];
+              for (var key in result) {
+                var experimentID = result[key].split(":")[0];
+                experimentIDs.push(experimentID);
+                command.push(experimentID + ":metadata:env.id");
+                command.push(experimentID + ":summary:EpRewMean");
+                command.push(experimentID + ":summary:EpLenMean");
+                command.push(experimentID + ":metadata:date");
+              }
+              console.log("sending command " + command.toString());
+              detailsSocket.send(JSON.stringify(command));
+              // overviewGrid.items = data;
+              detailsSocket.onmessage = function(messageEvent) {
+                console.log("got");
+                var result = JSON.parse(messageEvent.data)["mget"];
+                console.dir(result);
+                var overviewData = [];
+                for (i = 0; i < experimentIDs.length; ++i) {
+                  var m = new Date(Date.parse(result[4 * i + 3]));
+                  console.log("date is");
+                  console.dir(m);
+                  overviewData.push({"Experiment ID": experimentIDs[i],
+                                     "Environment": result[4 * i],
+                                     "Reward": Number(result[4 * i + 1]),
+                                     "EpisodeLength": Number(result[4 * i + 2]),
+                                     "Date": m.toString()
+                                   });
                 }
-                detailsGrid.items = data;
+                overviewGrid.items = overviewData;
               }
             }
-          }.bind(overviewGrid));
-
-          chartSocket.onmessage = function(messageEvent) {
-            console.log("got charSocket message");
-            console.dir(messageEvent.data);
-
-            var list = JSON.parse(messageEvent.data)["lrange"].map(Number);
-            console.dir(list);
-
-            // dataTable.rows = [["episode"].concat(list), ["cost"].concat(list)];
-            // clear old contents
-            dataTable.removeRows(0, dataTable.getNumberOfRows());
-            for (i = 0; i < list.length; ++i) {
-              dataTable.addRow([i, list[i]]);
+            
+            costSocket.onopen = function() {
+              console.log("costSocket connected!");
             }
 
-            lineChart.view = dataTable;
-            lineChart.redraw();
-          }
-
-          socket.onmessage = function(messageEvent) {
-            console.dir(messageEvent);
-            var result = JSON.parse(messageEvent.data)["KEYS"];
-            console.dir(result);
-            var data = [];
-            for (var key in result) {
-              data.push({"Experiment ID": result[key].split(":")[0], "MoreInfo": 0});
+            episodeLengthSocket.onopen = function() {
+              console.log("episodeLengthSocket connected!");
             }
-            overviewGrid.items = data;
+
+            overviewGrid.addEventListener('selected-items-changed', function() {
+              var index = this.selection.selected();
+              console.log("selected " + index);
+              if (index != undefined && this.items != undefined && this.items[index] != undefined) {
+                var id = this.items[index]["Experiment ID"];
+                console.log("id is " + id);
+                var hyperparamCommand = ["mget"];
+                for (i = 0; i < hyperparamLabels.length; ++i) {
+                  hyperparamCommand.push(id + ":hyperparams:" + hyperparamLabels[i]);
+                }
+                console.log("sending over hyperparamSocket:");
+                console.dir(hyperparamCommand);
+                hyperparamsSocket.send(JSON.stringify(hyperparamCommand));
+                costSocket.send(JSON.stringify(["lrange", id + ":EpRewMean", "0", "-1"]));
+                episodeLengthSocket.send(JSON.stringify(["lrange", id + ":EpLenMean", "0", "-1"]));
+                lossPolSocket.send(JSON.stringify(["lrange", id + ":loss_pol_surr", "0", "-1"]));
+                lossValSocket.send(JSON.stringify(["lrange", id + ":loss_vf_loss", "0", "-1"]));
+                socket.onmessage = function(messageEvent) {
+                  console.dir(messageEvent.data);
+                  var result = JSON.parse(messageEvent.data)["HGETALL"];
+                  var data = [];
+                  for (var key in result) {
+                    data.push({"Property": key, "Value": result[key]});
+                  }
+                  detailsGrid.items = data;
+                }
+              }
+            }.bind(overviewGrid));
+
+            costSocket.onmessage = function(messageEvent) {
+              load_chart(messageEvent, costTable, costChart);
+            }
+
+            episodeLengthSocket.onmessage = function(messageEvent) {
+              load_chart(messageEvent, episodeLengthTable, episodeLengthChart);
+            }
+
+            lossPolSocket.onmessage = function(messageEvent) {
+              load_chart(messageEvent, lossPolTable, lossPolChart);
+            }
+
+            lossValSocket.onmessage = function(messageEvent) {
+              load_chart(messageEvent, lossValTable, lossValChart);
+            }
+
+            hyperparamsSocket.onmessage = function(messageEvent) {
+              console.log("got hyperparamsSocket");
+              console.dir(messageEvent.data);
+              var result = JSON.parse(messageEvent.data)["mget"];
+              var hyperparamData = [];
+              for (i = 0; i < result.length; ++i) {
+                hyperparamData.push({"Property": hyperparamLabels[i],
+                                     "Value": result[i],
+                                    });
+              }
+              detailsGrid.items = hyperparamData;
+            }
           }
-        });
+        });});});});
       }
     });
   </script>
